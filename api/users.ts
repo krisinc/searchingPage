@@ -59,21 +59,31 @@ export interface UpdateUserPayload extends CreateUserPayload {
 
 const STORAGE_KEY = 'db.users.v1'
 
-let _cacheUsers: User[] | null = null
+let _cacheUsers: User[] | undefined
 let _cacheAt = 0
 const CACHE_TTL_MS = 2000
 
 function invalidateCache() {
-  _cacheUsers = null
+  _cacheUsers = undefined
   _cacheAt = 0
+}
+
+function safeParseUsers(raw: string | null): User[] {
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as User[]) : []
+  } catch {
+    return []
+  }
 }
 
 function loadUsersCached(): User[] {
   const now = Date.now()
-  if (_cacheUsers && now - _cacheAt < CACHE_TTL_MS) return _cacheUsers
+  if (_cacheUsers !== undefined && now - _cacheAt < CACHE_TTL_MS) return _cacheUsers
 
   const raw = localStorage.getItem(STORAGE_KEY)
-  _cacheUsers = raw ? JSON.parse(raw) : []
+  _cacheUsers = safeParseUsers(raw)
   _cacheAt = now
   return _cacheUsers
 }
@@ -103,7 +113,15 @@ function applyFilters(data: User[], filters?: UserFilters) {
   const to = filters.birthdateTo
 
   // 沒有任何條件就直接回傳（省 allocation）
-  if (!name && !position && !location && ageMin === undefined && ageMax === undefined && !from && !to) {
+  if (
+    !name &&
+    !position &&
+    !location &&
+    ageMin === undefined &&
+    ageMax === undefined &&
+    !from &&
+    !to
+  ) {
     return data
   }
 
