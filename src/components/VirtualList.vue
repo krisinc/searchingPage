@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineExpose, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const props = defineProps<{
   items: any[]

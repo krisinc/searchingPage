@@ -8,28 +8,52 @@ export interface SeedOptions {
 }
 
 /** 產生 yyyy-mm-dd */
-function randomDate(start: Date, end: Date) {
+function randomDate(start: Date, end: Date): string {
   const d = new Date(
     start.getTime() + Math.random() * (end.getTime() - start.getTime())
   )
   return d.toISOString().slice(0, 10)
 }
 
-function randomItem<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]
+function randomItem<T>(arr: readonly [T, ...T[]]): T {
+  const idx = Math.floor(Math.random() * arr.length)
+  const v = arr[idx]
+  if (v === undefined) {
+    throw new Error('randomItem: unexpected undefined')
+  }
+  return v
 }
 
-function randomName() {
-  const first = ['John', 'Mary', 'Alex', 'Chris', 'David', 'Anna', 'Linda', 'Peter']
-  const last = ['Chen', 'Wang', 'Lin', 'Chang', 'Lee', 'Wu', 'Liu']
+function randomName(): string {
+  const first = [
+    'John',
+    'Mary',
+    'Alex',
+    'Chris',
+    'David',
+    'Anna',
+    'Linda',
+    'Peter'
+  ] as const
+
+  const last = [
+    'Chen',
+    'Wang',
+    'Lin',
+    'Chang',
+    'Lee',
+    'Wu',
+    'Liu'
+  ] as const
+
   return `${randomItem(first)} ${randomItem(last)}`
 }
 
-function randomAge() {
+function randomAge(): number {
   return Math.floor(Math.random() * (65 - 20 + 1)) + 20
 }
 
-export function seedUsers(options?: SeedOptions) {
+export function seedUsers(options?: SeedOptions): void {
   const count = options?.count ?? 10000
   const force = options?.force ?? false
 
@@ -39,22 +63,40 @@ export function seedUsers(options?: SeedOptions) {
     return
   }
 
-  const positions = ['Engineer', 'Manager', 'Designer', 'QA', 'HR', 'Sales']
-  const locations = ['Taipei', 'Taichung', 'Kaohsiung', 'Tainan', 'Hsinchu']
+  const positions = [
+    'Engineer',
+    'Manager',
+    'Designer',
+    'QA',
+    'HR',
+    'Sales'
+  ] as const
+
+  const locations = [
+    'Taipei',
+    'Taichung',
+    'Kaohsiung',
+    'Tainan',
+    'Hsinchu'
+  ] as const
 
   const users: User[] = []
 
+  const currentYear = new Date().getFullYear()
+  const baseId = Date.now()
+
   for (let i = 0; i < count; i++) {
     const age = randomAge()
+
     users.push({
-      id: Date.now() + i, // mock unique id
+      id: baseId + i, // mock unique id
       name: randomName(),
       position: randomItem(positions),
       location: randomItem(locations),
       age,
       birthdate: randomDate(
-        new Date(new Date().getFullYear() - age - 1, 0, 1),
-        new Date(new Date().getFullYear() - age, 11, 31)
+        new Date(currentYear - age - 1, 0, 1),
+        new Date(currentYear - age, 11, 31)
       )
     })
   }
