@@ -41,8 +41,7 @@ export interface UserQuery {
   page?: number
   pageSize?: number
 
-  /** ✅ 新增：pin 規則 */
-  pin?: PinRule
+  pin?: PinRule[]
 }
 
 export interface PaginatedResponse<T> {
@@ -175,27 +174,53 @@ function applySingleSort(data: User[], sortBy?: UserQuery['sortBy'], sortOrder?:
   return data
 }
 
-/** ✅ pin：排序完後，把指定 id 移到全域第 position 筆（1-based） */
-function applyPin(data: User[], pin?: PinRule) {
-  if (!pin) return data
+function applyPins(data: User[], pins?: PinRule[]) {
+  if (!pins?.length) return data
 
-  const id = pin.id
-  const position = pin.position
+  const cleaned: Array<{ id: number; position: number }> = []
 
-  if (!Number.isFinite(position)) return data
+  for (const p of pins) {
+    if (!p) continue
+    const pos = Math.floor(p.position)
+    if (!Number.isFinite(pos) || pos < 1) continue
+    cleaned.push({ id: p.id, position: pos })
+  }
 
-  const idx = data.findIndex((u) => u.id === id)
-  if (idx === -1) return data
+  if (!cleaned.length) return data
 
-  const target = Math.max(1, Math.floor(position)) // 1-based
-  const toIndex = Math.min(data.length - 1, target - 1)
+  const lastIndexById = new Map<number, number>()
+  for (const [i, item] of cleaned.entries()) {
+    lastIndexById.set(item.id, i)
+  }
 
-  if (idx === toIndex) return data
+  const rules: Array<{ id: number; position: number; order: number }> = []
+  for (const [id, order] of lastIndexById.entries()) {
+    const item = cleaned[order]
+    if (!item) continue
 
-  const [item] = data.splice(idx, 1)
-  data.splice(toIndex, 0, item)
+    rules.push({
+      id,
+      position: item.position,
+      order
+    })
+  }
+
+  rules.sort((a, b) => a.order - b.order)
+
+  for (const r of rules) {
+    const idx = data.findIndex((u) => u.id === r.id)
+    if (idx === -1) continue
+
+    const [item] = data.splice(idx, 1)
+    if (!item) continue
+
+    const toIndex = Math.min(data.length, r.position - 1)
+    data.splice(toIndex, 0, item)
+  }
+
   return data
 }
+
 
 function applyPaging(data: User[], page: number, pageSize: number): PaginatedResponse<User> {
   const total = data.length
@@ -225,8 +250,7 @@ export function apiGetUsers(query: UserQuery): Promise<ApiResponse<PaginatedResp
     if (q.ordering?.length) data = applyOrdering(data, q.ordering)
     else data = applySingleSort(data, q.sortBy, q.sortOrder)
 
-    // ✅ 特殊排序：pin（排序後、分頁前）
-    data = applyPin(data, q.pin)
+    data = applyPins(data, q.pin)
 
     return applyPaging(data, q.page!, q.pageSize!)
   })

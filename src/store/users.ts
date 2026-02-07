@@ -7,13 +7,14 @@ import {
   type User,
   type UserQuery,
   type UserFilters,
-  type SortDirection
+  type SortDirection,
+  type PinRule
 } from '@/api/users'
 import type { ApiError } from '@/api/http'
 
 type SortField = UserQuery['sortBy']
 type OrderingRule = NonNullable<UserQuery['ordering']>[number]
-type PinRule = NonNullable<UserQuery['pin']>
+type PinRuleItem = PinRule
 
 const MAX_ROWS_IN_MEMORY = 5000
 
@@ -26,7 +27,7 @@ function buildBaseKey(
     sortOrder: q.sortOrder ?? '',
     ordering: q.ordering ?? [],
     pageSize: q.pageSize ?? 500,
-    pin: q.pin ?? null
+    pin: q.pin ?? []
   })
 }
 
@@ -41,8 +42,7 @@ export const useUsersStore = defineStore('users', {
     sortOrder: undefined as SortDirection | undefined,
     ordering: [] as OrderingRule[],
 
-    /** ✅ 特殊排序：固定某筆到全域第 N 筆（1-based） */
-    pin: null as PinRule | null,
+    pinRules: [] as PinRuleItem[],
 
     page: 1,
     pageSize: 500,
@@ -66,7 +66,7 @@ export const useUsersStore = defineStore('users', {
         sortBy: !state.ordering.length ? state.sortBy : undefined,
         sortOrder: !state.ordering.length ? state.sortOrder : undefined,
         pageSize: state.pageSize,
-        pin: state.pin ?? undefined
+        pin: state.pinRules.length ? state.pinRules : undefined
       }
     }
   },
@@ -92,13 +92,25 @@ export const useUsersStore = defineStore('users', {
       this.resetList()
     },
 
-    /** ✅ 設定/清除 pin（會影響排序結果，所以要 resetList） */
-    setPin(rule: PinRule) {
-      this.pin = rule
+    addPin(rule: PinRuleItem) {
+      const idx = this.pinRules.findIndex((p) => p.id === rule.id)
+      if (idx !== -1) {
+        this.pinRules.splice(idx, 1)
+        this.pinRules.push(rule)
+      } else {
+        this.pinRules.push(rule)
+      }
       this.resetList()
     },
-    clearPin() {
-      this.pin = null
+
+    removePin(id: number) {
+      const idx = this.pinRules.findIndex((p) => p.id === id)
+      if (idx !== -1) this.pinRules.splice(idx, 1)
+      void this.refreshKeepRows()
+    },
+
+    clearPins() {
+      this.pinRules = []
       this.resetList()
     },
 
@@ -138,7 +150,6 @@ export const useUsersStore = defineStore('users', {
       await this.fetchNextPage()
     },
 
-    /** ✅ soft refresh：不清空 rows，回來後 replace */
     async refreshKeepRows() {
       this.page = 1
       this.hasMore = true
@@ -197,7 +208,6 @@ export const useUsersStore = defineStore('users', {
       }
     },
 
-    /** Create：可能影響排序/條件 → soft refresh */
     async create(payload: Omit<User, 'id'>) {
       this.loading = true
       this.error = ''
@@ -213,7 +223,6 @@ export const useUsersStore = defineStore('users', {
       }
     },
 
-    /** Update：局部更新，避免清空列表 */
     async update(payload: User) {
       this.loading = true
       this.error = ''
@@ -232,7 +241,6 @@ export const useUsersStore = defineStore('users', {
       }
     },
 
-    /** Delete：局部刪除 + total-- */
     async remove(id: number) {
       this.loading = true
       this.error = ''

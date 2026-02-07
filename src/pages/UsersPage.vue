@@ -73,11 +73,11 @@
         </div>
 
         <button
-          v-if="store.pin"
+          v-if="hasPins"
           class="btn subtle mobileSort__clearPin"
-          @click="async () => { store.clearPin(); await store.fetchFirstPage(); listRef.value?.scrollToTop() }"
+          @click="clearPinned"
         >
-          Clear Pin
+          Clear Pins
         </button>
       </div>
     </header>
@@ -94,12 +94,12 @@
       <template #default="{ items }">
         <!-- Desktop rows -->
         <div
-          v-for="u in items"
+          v-for="(u, index) in items"
           :key="u.id"
           class="row row--desktop"
           :style="{ height: ROW_H + 'px' }"
         >
-          <div class="cell">{{ u.name }}</div>
+          <div class="cell">#{{ index + 1 }} {{ u.name }}</div>
           <div class="cell">{{ u.position }}</div>
           <div class="cell">{{ u.location }}</div>
           <div class="cell cell--right">{{ u.age }}</div>
@@ -107,34 +107,41 @@
 
           <div class="cell actions">
             <button class="btn subtle" @click="openEdit(u)">Edit</button>
+
             <button
               class="btn subtle"
               @click="pin(u)"
-              :title="store.pin?.id === u.id ? `目前固定第 ${store.pin.position} 筆` : '固定這筆到指定順位'"
+              :title="isPinned(u.id) ? `目前固定第 ${pinnedPosition(u.id)} 筆` : '固定這筆到指定順位'"
             >
-              {{ store.pin?.id === u.id ? `Pinned #${store.pin.position}` : 'Pin' }}
+              {{ isPinned(u.id) ? 'Unpin' : 'Pin' }}
             </button>
+
             <button class="btn danger" @click="remove(u)">Delete</button>
           </div>
         </div>
 
         <!-- Mobile cards -->
-        <div v-for="u in items" :key="u.id" class="card row--mobile">
+        <div v-for="(u, index) in items" :key="u.id" class="card row--mobile">
           <div class="card__top">
             <div class="card__title">
               <span class="name">{{ u.name }}</span>
               <span class="age">{{ u.age }}</span>
             </div>
-            <div class="card__actions">
-              <button class="btn subtle btn--sm" @click="openEdit(u)">Edit</button>
-              <button
-                class="btn subtle btn--sm"
-                @click="pin(u)"
-                :title="store.pin?.id === u.id ? `目前固定第 ${store.pin.position} 筆` : '固定這筆到指定順位'"
-              >
-                {{ store.pin?.id === u.id ? `Pinned #${store.pin.position}` : 'Pin' }}
-              </button>
-              <button class="btn danger btn--sm" @click="remove(u)">Delete</button>
+            <div class="card__secondRow">
+              <span class="index">#{{ index + 1 }}</span>
+              <div class="card__actions">
+                <button class="btn subtle btn--sm" @click="openEdit(u)">Edit</button>
+
+                <button
+                  class="btn subtle btn--sm"
+                  @click="pin(u)"
+                  :title="isPinned(u.id) ? `目前固定第 ${pinnedPosition(u.id)} 筆` : '固定這筆到指定順位'"
+                >
+                  {{ isPinned(u.id) ? `Unpin` : 'Pin' }}
+                </button>
+
+                <button class="btn danger btn--sm" @click="remove(u)">Delete</button>
+              </div>
             </div>
           </div>
 
@@ -327,9 +334,25 @@ function icon(field: SortField) {
   return '↕'
 }
 
-/** ✅ Pin：把指定 user 固定在全域第 N 筆（1-based） */
+const hasPins = computed(() => (store.pinRules?.length ?? 0) > 0)
+
+function pinnedPosition(id: number): number | null {
+  const r = store.pinRules.find((p) => p.id === id)
+  return r ? r.position : null
+}
+
+function isPinned(id: number): boolean {
+  return pinnedPosition(id) != null
+}
+
 async function pin(u: User) {
-  const defaultPos = store.pin?.id === u.id ? String(store.pin.position) : '1'
+  if (isPinned(u.id)) {
+    store.removePin(u.id)
+    return
+  }
+  const current = pinnedPosition(u.id)
+  const defaultPos = current != null ? String(current) : '1'
+
   const raw = window.prompt(`要把「${u.name}」固定在第幾筆？（1 = 第一筆）`, defaultPos)
   if (raw == null) return
 
@@ -339,7 +362,14 @@ async function pin(u: User) {
     return
   }
 
-  store.setPin({ id: u.id, position: Math.floor(n) })
+  // 後來設定者優先：store.addPin 會把同 id 規則移到最後
+  store.addPin({ id: u.id, position: Math.floor(n) })
+  await store.fetchFirstPage()
+  listRef.value?.scrollToTop()
+}
+
+async function clearPinned() {
+  store.clearPins()
   await store.fetchFirstPage()
   listRef.value?.scrollToTop()
 }
@@ -688,10 +718,6 @@ $error: #b42318;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.04);
 
   &__top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
     margin-bottom: 10px;
   }
 
@@ -699,6 +725,7 @@ $error: #b42318;
     display: flex;
     gap: 8px;
     align-items: center;
+    margin-bottom: 10px;
 
     .name {
       font-weight: 800;
@@ -715,6 +742,13 @@ $error: #b42318;
       color: #374151;
       background: #fff;
     }
+  }
+
+  &__secondRow {
+    display: flex;
+    color: #333;
+    align-items: center;
+    justify-content: space-between;
   }
 
   &__actions {
