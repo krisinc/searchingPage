@@ -24,9 +24,8 @@
 
           <button class="btn" @click="onSearch">Search</button>
           <button class="btn subtle" @click="onReset">Reset</button>
+          <button class="btn" @click="openCreate">+ Add</button>
         </div>
-
-        <button class="btn" @click="openCreate">+ Add</button>
       </div>
 
       <!-- Desktop header -->
@@ -72,6 +71,14 @@
             {{ store.sortOrder === 'desc' ? '↓' : '↑' }}
           </button>
         </div>
+
+        <button
+          v-if="store.pin"
+          class="btn subtle mobileSort__clearPin"
+          @click="async () => { store.clearPin(); await store.fetchFirstPage(); listRef.value?.scrollToTop() }"
+        >
+          Clear Pin
+        </button>
       </div>
     </header>
 
@@ -97,8 +104,16 @@
           <div class="cell">{{ u.location }}</div>
           <div class="cell cell--right">{{ u.age }}</div>
           <div class="cell mono">{{ u.birthdate }}</div>
+
           <div class="cell actions">
             <button class="btn subtle" @click="openEdit(u)">Edit</button>
+            <button
+              class="btn subtle"
+              @click="pin(u)"
+              :title="store.pin?.id === u.id ? `目前固定第 ${store.pin.position} 筆` : '固定這筆到指定順位'"
+            >
+              {{ store.pin?.id === u.id ? `Pinned #${store.pin.position}` : 'Pin' }}
+            </button>
             <button class="btn danger" @click="remove(u)">Delete</button>
           </div>
         </div>
@@ -112,6 +127,13 @@
             </div>
             <div class="card__actions">
               <button class="btn subtle btn--sm" @click="openEdit(u)">Edit</button>
+              <button
+                class="btn subtle btn--sm"
+                @click="pin(u)"
+                :title="store.pin?.id === u.id ? `目前固定第 ${store.pin.position} 筆` : '固定這筆到指定順位'"
+              >
+                {{ store.pin?.id === u.id ? `Pinned #${store.pin.position}` : 'Pin' }}
+              </button>
               <button class="btn danger btn--sm" @click="remove(u)">Delete</button>
             </div>
           </div>
@@ -124,8 +146,7 @@
               <span class="k">Location</span><span class="v">{{ u.location }}</span>
             </div>
             <div class="kv">
-              <span class="k">Birthdate</span
-              ><span class="v mono">{{ u.birthdate }}</span>
+              <span class="k">Birthdate</span><span class="v mono">{{ u.birthdate }}</span>
             </div>
           </div>
         </div>
@@ -159,43 +180,27 @@
         <form class="modal__body" @submit.prevent="submit">
           <div class="grid">
             <label class="field">
-              <span class="label"
-                >Name <span class="hint" title="使用者姓名（必填）">?</span></span
-              >
+              <span class="label">Name <span class="hint" title="使用者姓名（必填）">?</span></span>
               <input class="input" v-model.trim="form.name" required />
             </label>
 
             <label class="field">
-              <span class="label"
-                >Position <span class="hint" title="職位（必填）">?</span></span
-              >
+              <span class="label">Position <span class="hint" title="職位（必填）">?</span></span>
               <input class="input" v-model.trim="form.position" required />
             </label>
 
             <label class="field">
-              <span class="label"
-                >Location <span class="hint" title="所在地（必填）">?</span></span
-              >
+              <span class="label">Location <span class="hint" title="所在地（必填）">?</span></span>
               <input class="input" v-model.trim="form.location" required />
             </label>
 
             <label class="field">
-              <span class="label"
-                >Age <span class="hint" title="年齡（數字）">?</span></span
-              >
-              <input
-                class="input"
-                type="number"
-                v-model.number="form.age"
-                min="0"
-                required
-              />
+              <span class="label">Age <span class="hint" title="年齡（數字）">?</span></span>
+              <input class="input" type="number" v-model.number="form.age" min="0" required />
             </label>
 
             <label class="field">
-              <span class="label"
-                >Birthdate <span class="hint" title="生日（yyyy-mm-dd）">?</span></span
-              >
+              <span class="label">Birthdate <span class="hint" title="生日（yyyy-mm-dd）">?</span></span>
               <input class="input" type="date" v-model="form.birthdate" required />
             </label>
           </div>
@@ -203,12 +208,7 @@
           <p v-if="modal.error" class="formError">{{ modal.error }}</p>
 
           <div class="modal__actions">
-            <button
-              class="btn subtle"
-              type="button"
-              @click="closeModal"
-              :disabled="modal.submitting"
-            >
+            <button class="btn subtle" type="button" @click="closeModal" :disabled="modal.submitting">
               Cancel
             </button>
             <button class="btn" type="submit" :disabled="modal.submitting">
@@ -230,7 +230,6 @@ import { seedUsers } from '@/api/seedUsers'
 import type { User } from '@/api/users'
 
 const store = useUsersStore()
-
 const listRef = ref<{ scrollToTop: () => void } | null>(null)
 
 const draft = reactive({
@@ -284,7 +283,6 @@ async function onSort(field: SortField) {
 }
 
 const sortFieldValue = computed(() => {
-  // 多欄位 ordering 時，手機先視為 locked（避免混亂）
   if (store.ordering.length) return ''
   return (store.sortBy ?? '') as '' | SortField
 })
@@ -327,6 +325,23 @@ function icon(field: SortField) {
   if (store.sortOrder === 'asc') return '↑'
   if (store.sortOrder === 'desc') return '↓'
   return '↕'
+}
+
+/** ✅ Pin：把指定 user 固定在全域第 N 筆（1-based） */
+async function pin(u: User) {
+  const defaultPos = store.pin?.id === u.id ? String(store.pin.position) : '1'
+  const raw = window.prompt(`要把「${u.name}」固定在第幾筆？（1 = 第一筆）`, defaultPos)
+  if (raw == null) return
+
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 1) {
+    window.alert('請輸入 >= 1 的數字')
+    return
+  }
+
+  store.setPin({ id: u.id, position: Math.floor(n) })
+  await store.fetchFirstPage()
+  listRef.value?.scrollToTop()
 }
 
 /** ===== Pure DIV Modal ===== */
@@ -489,6 +504,12 @@ $error: #b42318;
   justify-content: space-between;
 }
 
+.toolbarRight {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .searchPanel {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -539,7 +560,7 @@ $error: #b42318;
 /* Desktop header + rows */
 .headerRow {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr 0.5fr 1fr 180px;
+  grid-template-columns: 1.2fr 1fr 1fr 0.5fr 1fr 240px;
   gap: 8px;
   padding: 10px 12px;
   border: 1px solid $border;
@@ -564,7 +585,7 @@ $error: #b42318;
 
 .row--desktop {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr 0.5fr 1fr 180px;
+  grid-template-columns: 1.2fr 1fr 1fr 0.5fr 1fr 240px;
   gap: 8px;
   padding: 0 12px;
   align-items: center;
@@ -596,9 +617,10 @@ $error: #b42318;
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  flex-wrap: nowrap;
 }
 
-/* Mobile sort chips */
+/* Mobile sort dropdown */
 .select {
   border: 1px solid $border;
   padding: 8px 10px;
@@ -640,22 +662,16 @@ $error: #b42318;
     padding: 8px 0;
     text-align: center;
   }
+
+  &__clearPin {
+    justify-self: end;
+  }
 }
 
 @media (max-width: 720px) {
   .mobileSort {
     display: grid;
   }
-}
-
-.chip {
-  border: 1px solid $border;
-  background: #fff;
-  color: #111827;
-  padding: 6px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
 /* Mobile cards */
@@ -681,7 +697,8 @@ $error: #b42318;
 
   &__title {
     display: flex;
-    gap: 4px;
+    gap: 8px;
+    align-items: center;
 
     .name {
       font-weight: 800;
@@ -704,6 +721,8 @@ $error: #b42318;
     display: flex;
     gap: 8px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   &__meta {
@@ -852,6 +871,10 @@ $error: #b42318;
     flex-direction: column;
     align-items: stretch;
   }
+
+  .toolbarRight {
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 720px) {
@@ -885,7 +908,7 @@ $error: #b42318;
   }
 
   /* buttons stretch */
-  .toolbar > .btn {
+  .toolbarRight .btn {
     width: 100%;
   }
 }

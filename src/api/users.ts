@@ -22,6 +22,11 @@ export interface UserFilters {
   birthdateTo?: string // yyyy-mm-dd
 }
 
+export interface PinRule {
+  id: number
+  position: number // 1-based
+}
+
 export interface UserQuery {
   filters?: UserFilters
 
@@ -35,6 +40,9 @@ export interface UserQuery {
 
   page?: number
   pageSize?: number
+
+  /** ✅ 新增：pin 規則 */
+  pin?: PinRule
 }
 
 export interface PaginatedResponse<T> {
@@ -167,6 +175,28 @@ function applySingleSort(data: User[], sortBy?: UserQuery['sortBy'], sortOrder?:
   return data
 }
 
+/** ✅ pin：排序完後，把指定 id 移到全域第 position 筆（1-based） */
+function applyPin(data: User[], pin?: PinRule) {
+  if (!pin) return data
+
+  const id = pin.id
+  const position = pin.position
+
+  if (!Number.isFinite(position)) return data
+
+  const idx = data.findIndex((u) => u.id === id)
+  if (idx === -1) return data
+
+  const target = Math.max(1, Math.floor(position)) // 1-based
+  const toIndex = Math.min(data.length - 1, target - 1)
+
+  if (idx === toIndex) return data
+
+  const [item] = data.splice(idx, 1)
+  data.splice(toIndex, 0, item)
+  return data
+}
+
 function applyPaging(data: User[], page: number, pageSize: number): PaginatedResponse<User> {
   const total = data.length
   const last_page = Math.max(1, Math.ceil(total / pageSize))
@@ -194,6 +224,9 @@ export function apiGetUsers(query: UserQuery): Promise<ApiResponse<PaginatedResp
 
     if (q.ordering?.length) data = applyOrdering(data, q.ordering)
     else data = applySingleSort(data, q.sortBy, q.sortOrder)
+
+    // ✅ 特殊排序：pin（排序後、分頁前）
+    data = applyPin(data, q.pin)
 
     return applyPaging(data, q.page!, q.pageSize!)
   })

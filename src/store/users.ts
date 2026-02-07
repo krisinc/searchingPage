@@ -13,16 +13,20 @@ import type { ApiError } from '@/api/http'
 
 type SortField = UserQuery['sortBy']
 type OrderingRule = NonNullable<UserQuery['ordering']>[number]
+type PinRule = NonNullable<UserQuery['pin']>
 
 const MAX_ROWS_IN_MEMORY = 5000
 
-function buildBaseKey(q: Pick<UserQuery, 'filters' | 'sortBy' | 'sortOrder' | 'ordering' | 'pageSize'>) {
+function buildBaseKey(
+  q: Pick<UserQuery, 'filters' | 'sortBy' | 'sortOrder' | 'ordering' | 'pageSize' | 'pin'>
+) {
   return JSON.stringify({
     filters: q.filters ?? {},
     sortBy: q.sortBy ?? '',
     sortOrder: q.sortOrder ?? '',
     ordering: q.ordering ?? [],
-    pageSize: q.pageSize ?? 500
+    pageSize: q.pageSize ?? 500,
+    pin: q.pin ?? null
   })
 }
 
@@ -37,6 +41,9 @@ export const useUsersStore = defineStore('users', {
     sortOrder: undefined as SortDirection | undefined,
     ordering: [] as OrderingRule[],
 
+    /** ✅ 特殊排序：固定某筆到全域第 N 筆（1-based） */
+    pin: null as PinRule | null,
+
     page: 1,
     pageSize: 500,
     hasMore: true,
@@ -50,13 +57,16 @@ export const useUsersStore = defineStore('users', {
   }),
 
   getters: {
-    baseQuery(state): Pick<UserQuery, 'filters' | 'sortBy' | 'sortOrder' | 'ordering' | 'pageSize'> {
+    baseQuery(
+      state
+    ): Pick<UserQuery, 'filters' | 'sortBy' | 'sortOrder' | 'ordering' | 'pageSize' | 'pin'> {
       return {
         filters: Object.keys(state.filters || {}).length ? state.filters : undefined,
         ordering: state.ordering.length ? state.ordering : undefined,
         sortBy: !state.ordering.length ? state.sortBy : undefined,
         sortOrder: !state.ordering.length ? state.sortOrder : undefined,
-        pageSize: state.pageSize
+        pageSize: state.pageSize,
+        pin: state.pin ?? undefined
       }
     }
   },
@@ -79,6 +89,16 @@ export const useUsersStore = defineStore('users', {
 
     setFilters(filters: UserFilters) {
       this.filters = filters
+      this.resetList()
+    },
+
+    /** ✅ 設定/清除 pin（會影響排序結果，所以要 resetList） */
+    setPin(rule: PinRule) {
+      this.pin = rule
+      this.resetList()
+    },
+    clearPin() {
+      this.pin = null
       this.resetList()
     },
 
@@ -155,18 +175,15 @@ export const useUsersStore = defineStore('users', {
         this.total = pageData.total
 
         if (options?.replace) {
-          // replace 時直接用新 page 的資料（也符合記憶體上限）
           this.rows = list.slice(0, MAX_ROWS_IN_MEMORY)
         } else {
           this.rows.push(...list)
-
           if (this.rows.length > MAX_ROWS_IN_MEMORY) {
             this.rows.splice(0, this.rows.length - MAX_ROWS_IN_MEMORY)
           }
         }
 
         this.hasMore = pageData.current_page < pageData.last_page && list.length > 0
-
         if (this.hasMore) this.page = pageData.current_page + 1
       } catch (e: any) {
         const err = e as ApiError
@@ -226,7 +243,6 @@ export const useUsersStore = defineStore('users', {
         if (idx !== -1) this.rows.splice(idx, 1)
         if (this.total > 0) this.total -= 1
 
-        // 可選：如果還有更多，嘗試補一頁
         if (this.hasMore && !this.loading) {
           await this.fetchNextPage()
         }
